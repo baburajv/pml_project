@@ -1,0 +1,187 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Baburaj Velayudhan"
+date: "November 28, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+A large amount of data about personal activity is collected in a relatively inexpensive way by using devices such as Jawbone Up, Nike FuelBand, and Fitbit. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+```{r}
+library(caret)
+library(rattle)
+```
+# Load Data
+```{r}
+Training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+dim(Training)
+
+str(Training)
+
+Testing <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(Testing)
+
+```
+
+The training data set has 19622 observations on 160 columns. Many columns have NA or blank values and they will not produce any useful information. Hence these should be removed alongwith the columns that hold information about the participants and the timestamps.
+
+```{r}
+
+# Get the indices of columns that have more than 90% NA or blank values.
+columns_to_remove <- which(colSums(is.na(Training) |Training=="")>0.9*dim(Training)[1]) 
+Training_Data <- Training[,-columns_to_remove]
+
+Training_Data <- Training_Data[,-c(1:7)]
+dim(Training_Data)
+
+```
+After data cleaning, the new training data set has only 53 columns. The same cleaning logic has to be applied on Testing data set too
+
+```{r}
+# clean testing set in a similar way we cleaned the training set 
+columns_to_remove <- which(colSums(is.na(Testing) |Testing=="")>0.9*dim(Testing)[1]) 
+Testing_Data <- Testing[,-columns_to_remove]
+Testing_Data <- Testing_Data[,-1]
+dim(Testing_Data)
+
+str(Testing_Data)
+
+
+```
+
+```{r}
+# create train and test set. train set with 75% data and rest with test set
+set.seed(12345)
+train_row_index <- createDataPartition(Training_Data$classe, p=0.75, list=FALSE)
+train_set <- Training_Data[train_row_index,]
+test_set <- Training_Data[-train_row_index,]
+dim(train_set)
+```
+```{r}
+dim(test_set)
+
+```
+
+We will follow the below models with cross-validation technique with 5 folds
+ (a) classification tree, 
+ (b) random forest and 
+ (c) gradient boosting method
+
+```{r}
+training_control <- trainControl(method="cv", number=5)
+classification_tree_model <- train(classe~., data=train_set, method="rpart", trControl=training_control)
+
+fancyRpartPlot(classification_tree_model$finalModel)
+
+```
+
+
+```{r}
+# now, do predict on test set
+predictor <- predict(classification_tree_model,newdata=test_set)
+
+class_tree_cm <- confusionMatrix(test_set$classe,predictor)
+
+# display confusion matrix and model accuracy
+class_tree_cm$table
+
+
+```
+
+```{r}
+class_tree_cm$overall[1]
+
+```
+As we see, the accuracy this model is about 54% only. 
+
+
+#Random forests based training
+
+```{r}
+random_forest_model <- train(classe~., data=train_set, method="rf", trControl=training_control, verbose=FALSE)
+
+print(random_forest_model)
+
+```
+```{r}
+plot(random_forest_model,main="Accuracy of Random forest model by number of predictors")
+```
+
+
+```{r}
+predictor <- predict(random_forest_model,newdata=test_set)
+
+random_forest_cm <- confusionMatrix(test_set$classe,predictor)
+
+# display confusion matrix and model accuracy
+random_forest_cm$table
+
+```
+
+
+```{r}
+random_forest_cm$overall[1]
+
+```
+
+
+```{r}
+names(random_forest_model$finalModel)
+```
+```{r}
+random_forest_model$finalModel$classes
+```
+
+```{r}
+plot(random_forest_model$finalModel,main="Model error of Random forest model by number of trees")
+```
+
+
+```{r}
+important_vars <- varImp(random_forest_model)
+important_vars
+```
+
+With random forest, the accuracy achieved is 99.3% using cross-validation with 5 steps, optimal number of predictors is 27. With more predictors, the accuracy slope decreases. From the Error chart we see that more predictors does not reduce the error.
+
+
+# Gradient boosting method
+
+```{r}
+gradient_boosting_model <- train(classe~., data=train_set, method="gbm", trControl=training_control, verbose=FALSE)
+print(gradient_boosting_model)
+```
+
+```{r}
+plot(gradient_boosting_model)
+```
+
+```{r}
+predictor <- predict(gradient_boosting_model,newdata=test_set)
+
+gradient_boosting_cm <- confusionMatrix(test_set$classe,predictor)
+gradient_boosting_cm$table
+
+```
+
+```{r}
+gradient_boosting_cm$overall[1]
+```                   
+
+Precision with 5 folds is 96.2%.
+
+# Conclusion
+This shows that the random forest model has the best accuracy for this activity. Use it to predict the values of classe for the actual test data set.
+
+```{r}
+test_set_predict <- predict(random_forest_model,newdata=Testing_Data)
+test_set_predict
+```
+
